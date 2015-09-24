@@ -8,6 +8,7 @@ Saving the seistool from the Berkeley Seismo group / Solaris
 * Proxima
 * Allen
 * Ashwini
+* Ankur
 ```
 
 ### Team meetings
