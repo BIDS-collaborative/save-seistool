@@ -6,7 +6,7 @@ Saving the seistool from the Berkeley Seismo group / Solaris
 <<<<<<< HEAD
 ## The team
 
-# Team meetings
+## Team meetings
 ```
 Default team meeting information:
 Location: 202 South Hall
@@ -14,4 +14,3 @@ Timing: 12 PM - 2 PM
 ```
 =======
 
->>>>>>> aaeebca43daaedec244464d4fd84fcd2f59bf50c
