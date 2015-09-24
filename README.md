@@ -4,6 +4,11 @@
 Saving the seistool from the Berkeley Seismo group / Solaris
 
 ## The team
+```
+* Proxima
+* Allen
+* Ashwini
+```
 
 ## Team meetings
 ```
