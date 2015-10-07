@@ -1,0 +1,29 @@
+data-set 02
+16 September 2015, M8.3 Chilean Earthquake
+      - At 11:54:33 (UTC)
+      - one million people evacuated for potential Tsnuami
+      - Shaking recorded on California stations
+      - Santiago to Berkeley Distance:  9567 km; 5945 miles
+      - Data format:  miniseed
+      - sr: 1 sps
+      - dur: 120-min
+      - All BDSN (96) LH? channles
+      - More Info:
+          http://earthquake.usgs.gov/earthquakes/eventpage/us20003k7a#general_summary
+      - From TaT:
+     .........................................
+Hi Bob,
+A tar file for the Chile event [17 MB] can be downloaded from:
+http://ncedc.org/ftp/outgoing/taira/Chile.tar
+This tar file includes 120-min-long miniseed data for all BDSN sites (LHZ,LHN,LHE).
+Thanks,
+Taka'aki
+     .........................................
+
+==================================
+    - To view with seistool
+      0) Go to work directory
+      1) Make file list:  ls *.BK.LH* > list
+      3) Run seistool:    seistool -el list
+      4) work interactively with seistool
+
