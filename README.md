@@ -9,13 +9,17 @@ Saving the seistool from the Berkeley Seismo group / Solaris
 * Allen
 * Ashwini
 * Ankur
+* Anna
 ```
 
 ### Team meetings
 ```
 Default team meeting information:
 Location: 202 South Hall
-Timing: 12 PM - 2 PM
+Timing: 12 PM - 2 PM, Thursday
+
+Location: 190 Doe Library
+Timing: 3:30 PM - 6:00 PM, Tuesday
 ```
 =======
 
