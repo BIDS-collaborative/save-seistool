@@ -9,6 +9,7 @@ Saving the seistool from the Berkeley Seismo group / Solaris
 * Allen
 * Ashwini
 * Ankur
+* Anna
 ```
 
 ### Team meetings
