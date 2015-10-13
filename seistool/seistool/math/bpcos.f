@@ -1,0 +1,22 @@
+c	$Id: bpcos.f,v 1.1 2001/12/21 18:39:07 lombard Exp $
+      FUNCTION BPCOS(W,WMIN,WL,WU,WMAX)
+C
+C  COS TAPER BETWEEN WMIN AND WL AND WU AND WMAX
+C
+      PARAMETER (PI=3.1415926535898)
+      IF(WMIN.LT.0.) GO TO 6
+      IF(W.LT.WMIN.OR.W.GT.WMAX) GO TO 7
+      IF(W-WL) 1,2,2
+    1 ARG=PI*(W-WMIN)/(WL-WMIN)
+      GO TO 5
+    2 IF(W-WU) 4,4,3
+    3 ARG=PI*(WMAX-W)/(WMAX-WU)
+      GO TO 5
+    4 GO TO 6
+    5 BPCOS=.5*(1.-COS(ARG))
+      RETURN
+    6 BPCOS=1.
+      RETURN
+    7 BPCOS=0.
+      RETURN
+      END

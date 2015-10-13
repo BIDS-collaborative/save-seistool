@@ -1,0 +1,671 @@
+.\"	$Id: resplib.man,v 1.3 2002/04/05 01:30:42 lombard Exp $
+.TH RESPLIB 3 "04 April 2002" BDSN
+.SH NAME
+resplib - Subroutine library for retrieving instrument response and site coordinates.
+.SH DATA STRUCTURES
+The resplib routines are designed station information such as coordinates, and
+instrument responses and coordinates on a per-channel basis. If you need only
+the coordinates on a per-channel basis, see coordlib(3).
+
+The current implementation of resplib retrieves data from files.
+Future implementations will retrieve data from a database, but the user
+interface should remain the same.
+
+The user MUST fill in the version number (RL_VERSION) in the search and output
+structures passed to the functions before calling the functions in order to
+ensure that the user program and libraries are using the same version of the
+structures.  If there is a version mismatch, the functions will return
+RL_VERSION_ERROR.
+
+.SH USAGE
+There are 2 versions of resplib - the standard version (libresplib.a)
+and a version compiled with debugging (libresplib.debug.a).
+
+The resplib routines are installed in the /usr/local directory.
+To build a C program, use:
+.nf
+	cc -c -I/usr/local/include myprog.c
+	cc -o myprog myprog.o -L/usr/local/lib -lresplib
+.fi
+To build a FORTRAN program, use
+.nf
+	f77 -c myprog.f
+	f77 -o myprog myprog.o -L/usr/local/lib -lresplib
+.fi
+.SH C INTERFACE ROUTINES
+
+A number of structures have been designed for use with the resplib functions,
+and are defined in the resplib.h file shown below.
+.nf
+.sp
+#ifndef __resplib_h
+#define	__resplib_h
+
+/************************************************************
+ * Structures & API's Specifications for the resplib        *
+ * library. This library gives to the user functions        *
+ * to access instrument response and coordinate files.      *
+ *                                                          *
+ * NCEDC @2000 -- Berkeley Seismological Laboratory         *
+ * Bugs/Suggestions/Questions: stephane@seismo.berkeley.edu *
+ *                                                          *
+ ************************************************************/
+
+/*	@(#)resplib.h	1.1 03/08/01 13:19:32	*/
+
+#include	<stdio.h>
+
+#define	RL_VERSION		 2
+
+#define	RL_DEFAULT_LENGTH	 8
+#define	RL_STRING_LENGTH	32
+#define	RL_DATE_LENGTH		24
+#define	RL_UNIT_LENGTH		16
+#define	RL_MAX_POLES		32
+#define	RL_MAX_ZEROES		32
+#define	RL_MAX_COEFFS		32
+
+#define	RL_OK			 0 
+#define	RL_EOF			-1
+#define	RL_VERSION_ERROR	 1
+#define	RL_IO_ERROR		 2
+#define	RL_FORMAT_ERROR		 3
+#define	RL_NOT_FOUND		RL_EOF
+
+#define	RL_DEFAULT_RESP_FILE	"/usr/contrib/data/bdsn/instr.db.resp"
+#define	RL_DEFAULT_COORD_FILE	"/usr/contrib/data/bdsn/stat.db.coord"
+
+typedef void *	RL_DESC;
+
+/************************************************************************/
+/*  Structures Definitions						*/
+/************************************************************************/
+
+/* Station Definition */
+typedef struct {
+    int	    version;			/* Version */
+    int	    pad;			/* Future expansion */
+    char    net[RL_DEFAULT_LENGTH];	/* Network code */
+    char    sta[RL_DEFAULT_LENGTH];	/* Station code */
+    char    staname[RL_STRING_LENGTH];	/* Station name */
+    char    ondate[RL_DATE_LENGTH];	/* Start date */
+    char    offdate[RL_DATE_LENGTH];	/* End date */
+    double  lat;			/* Latitude */
+    double  lon;			/* Longitude */
+    double  elev;			/* Elevation */
+    } station;
+
+/* Channel definition */
+typedef struct {
+    int	version;			/* Version */
+    int	pad;				/* Future expansion */
+    char    net[RL_DEFAULT_LENGTH];	/* Network code */
+    char    sta[RL_DEFAULT_LENGTH];	/* Station code */
+    char    seedchan[RL_DEFAULT_LENGTH];/* SEED channel code */
+    char    location[RL_DEFAULT_LENGTH];/* SEED location code */
+    char    geoschan[RL_DEFAULT_LENGTH];/* Geoscope channel code */
+    char    ondate[RL_DATE_LENGTH];	/* Start date */
+    char    offdate[RL_DATE_LENGTH];	/* End date */
+    char    units[RL_UNIT_LENGTH];	/* Input units */
+    double  lat;			/* Latitude */
+    double  lon;			/* Longitude */
+    double  elev;			/* Elevation */
+    double  depth;			/* Depth */
+    double  dip;			/* Dip */
+    double  azimuth;			/* Azimuth */
+} channel;
+
+/* Complex Number Definition */
+typedef struct {
+    double  real;			/* Real part */
+    double  imag;			/* Imaginary part */
+} dcomplex;
+
+/* Poles&Zeroes Response Definition */
+typedef struct {
+    int	    version;			/* Version */
+    int	    pad;			/* Future expansion */
+    double  gain;			/* Overall gain */
+    int	    nbpole;			/* Number of poles */
+    int	    nbzero;			/* Number of zeroes */
+    dcomplex pole[RL_MAX_POLES];	/* Complex poles */
+    dcomplex zero[RL_MAX_ZEROES];	/* Complex zeroes */
+} pz_resp;
+
+/* Polynomial Response Definition */
+typedef struct {
+    int	    version;			/* Version */
+    int	nbcoeff;			/* Number of coeff. */
+					/* polynomial approx. */
+    char    type[RL_DEFAULT_LENGTH];	/* Polynomial type */
+    double  maxerror;			/* Maximum error of   */
+					/* M = MacLaurin   */
+    double  value[RL_MAX_COEFFS];	/* Coefficients */
+} pn_resp;
+
+/* Instrument Response Definition */
+typedef struct {
+    int	    version;			/* Version */
+    int	    pad;			/* Future expansion */
+    channel resp_chan;			/* Channel information */
+    char    resp_type[RL_DEFAULT_LENGTH];/* Response type     */
+					/* PZ = Poles&Zeroes */
+					/* PN = Polynomial   */
+    pz_resp resp_pz;			/* Poles&Zeroes response */
+    pn_resp resp_pn;			/* Polynomial response */
+} response;
+
+/************************************************************************/
+/*  Station and Channel Functions Declarations				*/
+/************************************************************************/
+
+/************************************************************************/
+/*  StaOpen:	Open a station file.					*/
+/*									*/
+/*	Input:	Filename; if NULL or empty, open default station file.	*/
+/*	Return:	void ptr  ; NULL if an error occurred.	*/
+/************************************************************************
+RL_DESC StaOpen (char* Filename);
+
+/************************************************************************/
+/*  StaClose:	Close a station file.					*/
+/*									*/
+/*	Input:	Station file descriptor.				*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_IO_ERROR on error.					*/
+/************************************************************************/
+int StaClose (RL_DESC StaDesc);
+
+/************************************************************************/
+/*  StaRewind:	Rewind a station file.					*/
+/*									*/
+/*	Input:	Station file descriptor.				*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_IO_ERROR on error.					*/
+/************************************************************************/
+int StaRewind (RL_DESC StaDesc);
+
+/************************************************************************/
+/*  StaNext:	Return the next station entry.				*/
+/*									*/
+/*	Input:	File descriptor, Result station structure.		*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_EOF on EOF.						*/
+/*		RL_IO_ERROR on error.					*/
+/*		RL_VERSION_ERROR on version error.			*/
+/*		RL_FORMAT_ERROR on station entry format error.		*/
+/************************************************************************/
+int StaNext (RL_DESC StaDesc, station *StaInfo);
+
+/************************************************************************/
+/*  StaSearch:	Search a station file.					*/
+/*									*/
+/*	Input:	File descriptor, Search station structure,		*/
+/*		Result station structure.				*/
+/*									*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_EOF on EOF.						*/
+/*		RL_IO_ERROR on error.					*/
+/*		RL_VERSION_ERROR on version error.			*/
+/*		RL_FORMAT_ERROR on station entry format error.		*/
+/************************************************************************/
+int StaSearch (RL_DESC StaDesc, station *UserSta, station *StaInfo);
+
+/************************************************************************/
+/*  ChaOpen:	Open a channel file.					*/
+/*									*/
+/*	Input:	Filename; if null then default channel file is opened.	*/
+/*	Return:	Channel file descriptor; NULL if an error occurred.	*/
+/************************************************************************
+RL_DESC ChaOpen (char* Filename);
+
+/************************************************************************/
+/*  ChaClose:	Close a channel file.					*/
+/*									*/
+/*	Input:	Channel file descriptor.				*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_IO_ERROR on error.					*/
+/************************************************************************/
+int ChaClose (RL_DESC ChaDesc);
+
+/************************************************************************/
+/*  ChaRewind:	Rewind a channel file.					*/
+/*									*/
+/*	Input:	Channel file descriptor.				*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_IO_ERROR on error.					*/
+/************************************************************************/
+int ChaRewind (RL_DESC ChaDesc);
+
+/************************************************************************/
+/*  ChaNext:	Return the next channel entry.				*/
+/*									*/
+/*	Input:	File descriptor, Result channel structure.		*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_EOF on EOF.						*/
+/*		RL_IO_ERROR on error.					*/
+/*		RL_VERSION_ERROR on version error.			*/
+/*		RL_FORMAT_ERROR on station entry format error.		*/
+/************************************************************************/
+int ChaNext (RL_DESC ChaDesc, response* ChaInfo);
+
+/************************************************************************/
+/*  ChaSearch:	Search a channel file.					*/
+/*									*/
+/*	Input:	File descriptor, Search channel structure,		*/
+/*		Result channel structure.				*/
+/*									*/
+/*	Return:	RL_OK on success.					*/
+/*		RL_EOF on EOF.						*/
+/*		RL_IO_ERROR on error.					*/
+/*		RL_VERSION_ERROR on version error.			*/
+/*		RL_FORMAT_ERROR on station entry format error.		*/
+/*	Remark:	Date format is yyyy.doy.hhmm;				*/
+/*		If ommited, return the most recent entry for station.	*/
+/************************************************************************/
+int ChaSearch (RL_DESC ChaDesc, channel *UserCha, response* ChaInfo);
+
+#endif
+
+.nf
+.br
+.B RL_DESC StaOpen (char* Filename)
+.br
+.fi
+The StaOpen function must be called before any you make retrieve any
+station information.  For the resplib file implementation, the filename
+parameter is the filename that contains the station information.
+The function returns an opaque RL_DESC descriptor which is supplied to
+the other station functions.
+
+.nf
+.br
+.B int StaClose (RL_DESC StaDesc)
+.br
+.fi
+The StaClose function is used to close the station query descriptor.
+Any subsequent station queries must first call StaOpen again to
+acquire a new station descriptor.
+
+.nf
+.br
+.B int StaRewind (RL_DESC StaDesc)
+.br
+.fi
+The StaRewind function is used to reset station description queries
+to the beginning of the station list.  In the resplib file implementation,
+this rewinds the station file.
+
+.nf
+.br
+.B int StaNext (RL_DESC StaDesc, station *StaInfo)
+.br
+.fi
+The StaNext function returns the next station information in the
+user-supplied station structure.  If there are no more stations,
+it returns RL_EOF.
+
+.nf
+.br
+.B int StaSearch (RL_DESC StaDesc, station *UserSta, station *StaInfo)
+.br
+.fi
+The StaSearch function searches the station information for the station
+specified in the UserSta structure.  The user must provide the station and
+network names for which the station info is desired in the UserSta structure.
+If station information is found for the station, the
+data is returns in the station structure StaInfo provided by the user.
+If no station information is available for the requested station,
+the function returns RL_EOF.
+
+.nf
+.br
+.B RL_DESC ChaOpen (char* Filename)
+.br
+.fi
+The ChaOpen function must be called before any you make retrieve any
+channel information.  For the resplib file implementation, the filename
+parameter is the filename that contains the channel response information.
+The function returns an opaque RL_DESC descriptor which is supplied to
+the other channel functions.
+
+.nf
+.br
+.B int ChaClose (RL_DESC ChaDesc)
+.br
+.fi
+The ChaClose function is used to close the channel query descriptor.
+Any subsequent channel queries must first call ChaOpen again to
+acquire a new channel descriptor.
+
+.nf
+.br
+.B int ChaRewind (RL_DESC ChaDesc)
+.br
+.fi
+The ChaRewind function is used to reset channel description queries
+to the beginning of the channel list.  In the resplib file implementation,
+this rewinds the channel file.
+
+.nf
+.br
+.B int ChaNext (RL_DESC ChaDesc, channel *ChaInfo)
+.br
+.fi
+The ChaNext function returns the next channel information in the
+user-supplied channel structure.  If there are no more channels,
+it returns RL_EOF.
+
+.nf
+.br
+.B int ChaSearch (RL_DESC ChaDesc, channel *UserCha, channel *ChaInfo)
+.br
+.fi
+The ChaSearch function searches the channel information for the channel
+specified in the UserCha structure.  The user must provide the full channel
+name (SEED station, network, channel, and location) and time (in the ondate
+field) for which the
+channel info is desired in the UserCha structure.  If channel information is
+found for the channel and time, the data is returns in the channel
+structure ChaInfo provided by the user.  If no channel information is
+available for the requested channel and time, the function returns RL_EOF.
+
+.SH FORTRAN INTERFACE ROUTINES
+
+The FORTRAN interface routines are similar to the C interface routines.
+Please see the description of the corresponding C interface routine.
+The function calls and arguments are described in the include file below.
+
+The open functions return an opaque file descriptor that is currently
+stored in an integer*4.  Since this value is actually a pointer, the
+datatype of the opaque file descriptor will have to be changed to an
+integer*8 when used on a system with 64-bit pointers.
+
+A number of structures have been designed for use with the resplib functions,
+and are defined in the resplib.inc file shown below.
+.nf
+.sp
+C ************************************************************
+C * Structures & API's Specifications for the resplib        *
+C * library. This library gives to the user functions        *
+C * to access instrument response and coordinate files.      *
+C *                                                          *
+C * NCEDC @2000 -- Berkeley Seismological Laboratory         *
+C * Bugs/Suggestions/Questions: stephane@seismo.berkeley.edu *
+C *                                                          *
+C ************************************************************
+
+C	@(#)resplib.inc	1.1 03/08/01 13:19:32
+
+C **************************
+C * Parameters Definitions *
+C **************************
+
+      integer RL_DEFAULT_LENGTH, RL_DATE_LENGTH, RL_UNIT_LENGTH,
+     1 RL_MAX_POLES, RL_MAX_ZEROES, RL_MAX_COEFFS
+      parameter (RL_DEFAULT_LENGTH = 8)
+      parameter (RL_DATE_LENGTH    = 24)
+      parameter (RL_UNIT_LENGTH    = 16)
+      parameter (RL_MAX_POLES      = 32)
+      parameter (RL_MAX_ZEROES     = 32)
+      parameter (RL_MAX_COEFFS     = 32)
+
+      integer RL_VERSION
+      parameter ( RL_VERSION = 2 )
+
+      integer RL_OK, RL_EOF, RL_VERSION_ERROR, RL_IO_ERROR, 
+     1 RL_FORMAT_ERROR, RL_NOT_FOUND
+      parameter (RL_OK 		  = 0)
+      parameter (RL_EOF 	  = -1)
+      parameter (RL_VERSION_ERROR = 1)
+      parameter (RL_IO_ERROR 	  = 2)
+      parameter (RL_FORMAT_ERROR  = 3)
+      parameter (RL_NOT_FOUND	  = RL_EOF)
+
+      character*256 RL_DEFAULT_RESP_FILE
+      character*256 RL_DEFAULT_COORD_FILE
+      parameter (RL_DEFAULT_RESP_FILE =
+     1    '/usr/contrib/data/bdsn/instr.db.resp')
+      parameter (RL_DEFAULT_COORD_FILE = 
+     1    '/usr/contrib/data/bdsn/stat.db.coord')
+
+C ************************** 
+C * Structures Definitions * 
+C ************************** 
+
+C * Station Definition *
+      structure /station/
+	integer				version
+	integer				pad
+	character*(RL_DEFAULT_LENGTH)	net
+	character*(RL_DEFAULT_LENGTH)	sta
+	character*32			staname
+	character*(RL_DATE_LENGTH)	ondate
+	character*(RL_DATE_LENGTH)	offdate
+	real*8				lat
+	real*8				lon
+	real*8				elev
+      end structure
+
+C * Channel definition *
+      structure /channel/
+	integer				version
+	integer				pad
+	character*(RL_DEFAULT_LENGTH)	net
+	character*(RL_DEFAULT_LENGTH)	sta
+	character*(RL_DEFAULT_LENGTH)	seedchan
+	character*(RL_DEFAULT_LENGTH)	location
+	character*(RL_DEFAULT_LENGTH)	geoschan
+	character*(RL_DATE_LENGTH)	ondate
+	character*(RL_DATE_LENGTH)	offdate
+	character*(RL_UNIT_LENGTH)	units
+	real*8				lat
+	real*8				lon
+	real*8				elev
+	real*8				depth
+	real*8				dip
+	real*8				azimuth
+      end structure
+
+C * Poles&Zeroes Response Definition *
+      structure /pz_resp/
+	integer				version
+	integer				pad
+	real*8				gain
+	integer				nbpole
+	integer				nbzero
+	complex*16			pole(RL_MAX_POLES)
+	complex*16			zero(RL_MAX_ZEROES)
+      end structure
+
+C * Polynomial Response Definition *
+      structure /pn_resp/
+	integer				version
+	integer				nbcoeff
+	character*(RL_DEFAULT_LENGTH)	type
+	real*8				maxerror
+	real*8				value(RL_MAX_COEFFS)
+      end structure
+
+C * Instrument Response Definition *
+      structure /response/
+	integer				version
+	integer				pad
+	record /channel/		resp_chan
+	character*(RL_DEFAULT_LENGTH)	resp_type
+	record /pz_resp/		resp_pz
+	record /pn_resp/		resp_pn
+      end structure
+
+C**********************************************************************
+C   Functions Definitions
+C
+C	Note: Pointers are currently implemented integer*4.
+C**********************************************************************
+
+C**********************************************************************
+C   f_staopen:	Open a station file.
+C
+C	Input:  Filename; if blank then default station file is opened.
+C	Return:	Station file descriptor (int); 0 if an error occurred.
+C
+C 	integer*4 fp
+C 	character*256 filename
+C 	fp = f_staopen(filename)
+C**********************************************************************
+      integer*4 f_staopen
+      external f_staopen
+
+C**********************************************************************
+C   f_staclose:	Close a station file.
+C
+C	Input:  Station file descriptor.
+C	Return: RL_OK on success.
+C		RL_IO_ERROR on error.
+C 
+c	integer*4 fp
+C	integer status
+C	status = f_staclose(fp)
+C**********************************************************************
+      integer f_staclose
+      external f_staclose
+
+C**********************************************************************
+C   f_starewind: Rewind a station file.
+C
+C	Input:  Station file descriptor.
+C	Return: RL_OK on success.
+C		RL_IO_ERROR on error.
+C
+C	integer*4 fp
+C	integer status
+C	status = f_starewind(fp)
+C**********************************************************************
+      integer f_starewind
+      external f_starewind
+
+C**********************************************************************
+C  f_stanext:	Return the next station entry.
+C
+C	Input:  File descriptor, Result station structure.
+C	Return: RL_OK on success.
+C		RL_EOF on EOF.
+C		RL_IO_ERROR on error.
+C		RL_VERSION_ERROR on version error.
+C		RL_FORMAT_ERROR on station entry format error.
+C
+C	integer*4 fp
+C	integer status
+C	record /station/ stainfo
+C	status = f_stanext(fp, stainfo)
+C**********************************************************************
+      integer f_stanext
+      external f_stanext
+
+C**********************************************************************
+C  f_stasearch: Search a station file.
+C
+C	Input:  File descriptor, Search station structure,
+C		Result station structure.
+C
+C	Return: RL_OK on success.
+C		RL_EOF on EOF.
+C		RL_IO_ERROR on error.
+C		RL_VERSION_ERROR on version error.
+C		RL_FORMAT_ERROR on station entry format error.
+C
+C	integer*4 fp
+C	integer status
+C	record /station/ Usersta, stainfo
+C	status = f_stasearch(fp, Usersta, stainfo )
+C**********************************************************************
+      integer f_stasearch
+      external f_stasearch
+
+C**********************************************************************
+C  f_chaopen:	Open a channel file.
+C
+C	Input:  Filename; blank, open default channel file.
+C	Return:	Channel file descriptor (int); 0 if an error occurred.
+C
+C	integer*4 fp
+C	character*256 filenam
+C	fp = f_chaopen(filename)
+C**********************************************************************
+      integer*4 f_chaopen
+      external f_chaopen
+
+C**********************************************************************
+C  f_chaclose:	Close a channel file.
+C
+C	Input:  Channel file descriptor.
+C	Return: RL_OK on success.
+C		RL_IO_ERROR on error.
+C
+C	integer*4
+C	integer status
+C	status = f_chaclose(fp)
+C**********************************************************************
+      integer f_chaclose
+      external f_chaclose
+
+C**********************************************************************
+C  f_charewind: Rewind a channel file.
+C
+C	Input:  Channel file descriptor.
+C	Return: RL_OK on success.
+C		RL_IO_ERROR on error.
+C
+C	integer*4 fp
+C	integer status
+C	status = f_charewind(fp)
+C**********************************************************************
+      integer f_charewind
+      external f_charewind
+
+C**********************************************************************
+C  f_chanext:	Return the next channel entry.
+C
+C	Input:  File descriptor, Result channel structure.
+C	Return: RL_OK on success.
+C		RL_EOF on EOF.
+C		RL_IO_ERROR on error.
+C		RL_VERSION_ERROR on version error.
+C		RL_FORMAT_ERROR on station entry format error.
+C
+C	integer*4 fp
+C	integer status
+C	record /response/ chainfo
+C	status = f_chanext(fp, chainfo)
+C**********************************************************************
+      integer f_chanext
+      external f_chanext
+
+C**********************************************************************
+C   f_chasearch: Search a channel file.
+C
+C	Input:  File descriptor, Search channel structure,
+C		Result channel structure.
+C
+C	Return: RL_OK on success.
+C		RL_EOF on EOF.
+C		RL_IO_ERROR on error.
+C		RL_VERSION_ERROR on version error.
+C		RL_FORMAT_ERROR on station entry format error.
+C	Remark: Date format is yyyy.doy.hhmm;
+C		If ommited, return the most recent entry for station.
+C
+C	integer*4 fp
+C	integer status, f_chasearch
+C	record /channel/ usercha
+C	record /response/ chainfo
+C	external f_chasearch
+C	status = f_chasearch(fp, usercha, chainfo )
+C**********************************************************************
+      integer f_chasearch
+      external f_chasearch
+.nf
+.br
+
+.SH SEE ALSO
+.BR coordlib (3)

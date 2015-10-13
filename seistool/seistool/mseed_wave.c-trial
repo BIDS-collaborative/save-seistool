@@ -1,0 +1,547 @@
+#ifndef lint
+static char id[] = "$Id: mseed_wave.c,v 1.1 2001/12/21 18:39:04 lombard Exp $";
+#endif
+
+/*
+ * sdr_wave.c--
+ *    loading of SDR data files
+ *
+ * Copyright (c) 1992-3 Andrew K. Yu, Lawrence Berkeley Laboratory
+ *      and University of California, Berkeley.
+ * All rights reserved.
+ */
+#include <stdio.h>
+#include <math.h>
+#include <sys/param.h>
+#include "eqevtmgr.h"
+#include "wave.h"
+#include "time.h"
+
+/*
+ * Part of the following taken from qlib, qmerge ,qlib2 etc.
+ * Actually, we should be using the current qlib2 structures and functions
+ * here as this stuff is badly out of date. But it mostly works for now,
+ * so we'll leave it for another day. Pete Lombard, October, 2001
+ */
+#include "msdatatypes.h"
+#include "sdr.h"
+#include "steim.h"
+
+extern STI_TIME sdr_t_2_sti();
+
+/* #define DEBUG  */
+/**********************************************************************
+ *   Prototypes & structures                                          *
+ **********************************************************************/
+#define	FRAMES_PER_BLOCK (64-1)		/* # of data frames per seed blk*/
+#define	VALS_PER_FRAME	(16-1)		/* # of ints for data per frame.*/
+
+typedef struct {
+    SDR_HDR	h;
+    char hdr_pad[64- (sizeof(SDR_HDR))];
+} SEED_HEADER;
+
+typedef struct {
+    FRAME	f[FRAMES_PER_BLOCK];
+} STEIM_FRMS;
+
+typedef struct {
+    SEED_HEADER	shdr;
+    STEIM_FRMS	sfrm;
+} SDR;
+
+/* prototypes */
+SDR *read_mseed();
+void sdr2bis();
+
+/**********************************************************************
+ *   Reading in SDR files                                             *
+ **********************************************************************/
+SDR *read_mseed( fname, num_bytes )
+    char *fname; int *num_bytes;
+{
+    FILE *fp;
+    char *psdr, *sdrs;
+    int n= 0, max;
+    int nbytes= 0;
+
+    *num_bytes = 0;
+#define INIT_SEED_FRMS	10
+    max= INIT_SEED_FRMS * sizeof(SDR);
+    psdr = sdrs = (char *)Malloc(max);
+    if (sdrs == 0) return (SDR *)sdrs;
+    if((fp=fopen(fname,"r"))==NULL)
+	return (NULL);
+    while((n=fread(psdr, 1, max-nbytes, fp))!=0) {
+	nbytes += n;
+	psdr += n;
+	if (nbytes>=max) {
+	    max*=2;
+	    sdrs = (char *)Realloc(sdrs,max);
+	    psdr = sdrs + nbytes;
+	    if(sdrs==NULL) return (SDR *)sdrs;
+	}
+    }
+#ifdef DEBUG
+printf("*** %s  num of bytes: %d\n",fname,nbytes);
+#endif
+    fclose(fp);
+    *num_bytes= nbytes;
+    return (SDR *)sdrs;
+}
+
+int unpack( fname, curr_sdr, max_bytes, prev_sdr, dataptr, len)
+    char *fname;
+    SDR *curr_sdr; 
+    int max_bytes;
+    SDR *prev_sdr; 
+    int **dataptr; 
+    int len;
+{
+
+    int x0, xn;
+    int nsamp;
+    int *data, *t;
+    int cur;
+    int i, fn, wn, n, c;
+    int *tmpbuf = NULL;
+    SDR *next_sdr;
+    FRAME *first_frame;
+    int maxframe;
+    int blksize;
+    int datatype;
+    BLOCKETTE_HDR *bh;
+    BLOCKETTE_1000 *b1000;
+    int b1000_found = 0;
+    int first_data;
+
+#define FSDH(p)		p->shdr.h
+#define SHDRT(p)	p->shdr.h.time
+
+    if (max_bytes == 0) return len;
+    if (max_bytes < 64) {
+	fprintf (stderr, "Invalid SDR length in %s: %d bytes\n", fname, max_bytes);
+	return (-1);
+    }
+    if (FSDH(curr_sdr).data_hdr_ind != 'D' && 
+	FSDH(curr_sdr).data_hdr_ind != 'R' &&
+	FSDH(curr_sdr).data_hdr_ind != 'Q' ) {
+	fprintf (stderr, "Invalid SDR file: %s\n", fname);
+	return(-1);
+    }
+	
+    /* Scan for a blockette 1000 to tell us the blocksize and data fmt.	*/
+    /* Assume standard 4KB STEIM1 SEED Data Record.			*/
+    blksize = 4096;
+    datatype = STEIM1;
+    if ((n=FSDH(curr_sdr).first_blockette) > 0 && FSDH(curr_sdr).num_blockettes > 0) {
+	while ((bh = (BLOCKETTE_HDR *)((char *)curr_sdr + n)) != NULL) {
+	    if (bh->type == 1000) {
+		b1000 = (BLOCKETTE_1000*)bh;
+		datatype = b1000->format;
+		blksize = ldexp (1.0, b1000->data_rec_len);
+		++b1000_found;
+		break;
+	    }
+	    else n = bh->next;
+	}
+    }
+#ifdef DEBUG
+printf ("blockette 1000 %sfound: type=%s blksize=%d\n",
+	(b1000_found) ? "" : "NOT ",
+	(datatype==STEIM1) ? "STEIM1" :
+	(datatype==STEIM2) ? "STEIM2" : "Unknown", blksize);
+#endif
+    maxframe = (blksize-64)/sizeof(FRAME);
+    first_data = FSDH(curr_sdr).first_data;
+    first_frame = (FRAME *)((char *)curr_sdr + first_data);
+    if (max_bytes < blksize) {
+	fprintf (stderr, "Invalid SDR file %s: %d bytes left, %d bytes expected\n",
+		 fname, max_bytes, blksize);
+	return(-1);
+    }
+    nsamp= FSDH(curr_sdr).num_samples;
+
+    /* Determine if this SDR is contiguous in time with previous SDR.	*/
+    /* If not, provide appropriate padding.				*/
+    if (prev_sdr==NULL) { /* first time */
+	*dataptr= data= (int *)Malloc(sizeof(int)*nsamp);
+    }else {
+	int prev_nsamp;
+	float temp, prev_srate, prev_dur, sdiff,smult;
+	TIME prev_s, prev_e, s;
+	int need_pad=0, *to_pad;
+
+
+        time_gap_1(prev_sdr->shdr.h,curr_sdr->shdr.h,&sdiff);
+
+	prev_srate=prev_sdr->shdr.h.sample_rate_factor;
+	if (prev_srate<0) prev_srate= -1/prev_srate;
+	smult= prev_sdr->shdr.h.sample_rate_mult;
+	prev_srate= (smult>0)?prev_srate*smult : -prev_srate/smult;
+
+	if (fabs((double)sdiff)> ((float)1/prev_srate)) {
+	    if(sdiff>0) {
+		need_pad=len;
+	    }
+	    len+= sdiff*prev_srate;
+	    if (len <0) {
+		fprintf(stderr, "SDR: blocks out of order %d ,%f ,%f\n",len,sdiff,prev_srate);
+		return(-1);    /* no fix yet */
+	    }
+	}
+	*dataptr= data= (int *)Realloc(*dataptr, (len+nsamp)*sizeof(int));
+	if(data==NULL) return 0;
+	
+	if(need_pad) {
+	    int i;
+
+	    printf("-- [%.5s%.3s] %f secs padded in.\n",
+		   FSDH(curr_sdr).station_id,
+		   FSDH(curr_sdr).channel_id,
+		   sdiff);
+
+	    to_pad= &data[need_pad];
+	    for(i=0; i < (sdiff*prev_srate); i++) {
+		*to_pad++= 0;
+	    }
+	}
+    }
+
+    tmpbuf = (int *)malloc(nsamp * sizeof(int));
+    switch (datatype) {
+      case STEIM1:
+	n = unpack_steim1 (first_frame,blksize-FSDH(curr_sdr).first_data,
+		       nsamp,nsamp,&data[len],tmpbuf,&x0,&xn,NULL);
+	len += n;
+#ifdef DEBUG
+printf("x0= %d xn=%d\n",x0,xn);
+#endif
+	break;
+      case STEIM2:
+	n = unpack_steim2 (first_frame,blksize-FSDH(curr_sdr).first_data,
+		       nsamp,nsamp,&data[len],tmpbuf,&x0,&xn,NULL);
+	len += n;
+#ifdef DEBUG
+printf("x0= %d xn=%d\n",x0,xn);
+#endif
+	break;
+      default:
+	fprintf (stderr, "Unknown datatype for MiniSEED: %d\n", datatype);
+	return(-1);
+    }
+    if (tmpbuf) free (tmpbuf);
+
+    next_sdr = (SDR *)(((char *)curr_sdr)+blksize);
+    max_bytes -= blksize;
+    if (max_bytes ==0) return len;
+    else
+	return unpack(fname, next_sdr, max_bytes, curr_sdr, dataptr, len);
+}
+
+/**********************************************************************
+ *   Load Wave                                                        *
+ **********************************************************************/
+
+static float *sdr_prep_data( char *fname, SDR *sdrs, BIS3_HEADER *bis, 
+			     int *pdata_len, int seed_bytes )
+{			   
+    SDR *prev_sdr = NULL;
+    SDR *curr_sdr = sdrs;
+    SDR_HDR *ph;
+    SDR_TIME *pt;
+    FRAME *first_frame;
+    BLOCKETTE_HDR *bh;
+    BLOCKETTE_1000 *b1000;
+    int *data;
+    int *tmpbuf;
+    int data_len, data_max, data_incr, tmp_max;
+    int maxframe;
+    int blksize;
+    int datatype;
+    int b1000_found = 0;
+    int first_data;
+    int status_ok = 1;
+    float *tofloat, *arr;
+    int i, nsamp, new_samps;
+    int max, min;
+
+    data = NULL;
+    data_max = data_len = 0;
+    tmpbuf = NULL;
+    tmp_max = 0;
+    
+    while (seed_bytes && status_ok) {
+	if (seed_bytes < 64) {
+	    fprintf (stderr, "Invalid SDR length in %s: %d bytes\n", fname, 
+		     seed_bytes);
+	    status_ok = 0;
+	    break;
+	}
+	if (curr_sdr == NULL ) {
+	    fprintf(stderr, "Empty SDR pointer in %s\n", fname);
+	    status_ok = 0;
+	    break;
+	}
+	ph = p->shdr.h;
+	pt = p->shdr.h.time;
+	if (ph->data_hdr_ind != 'D' && 
+	    ph->data_hdr_ind != 'R' &&
+	    ph->data_hdr_ind != 'Q' ) {
+	    fprintf (stderr, "Invalid SDR file: %s data_hdr_ind %c\n", fname, 
+		     ph->data_hdr_ind);
+	    status_ok = 0;
+	}
+
+	if ( !b1000_found) {
+	    /* Scan for a blockette 1000 to tell us the blocksize and data fmt. */
+	    /* Assume standard 4KB STEIM1 SEED Data Record.			    */
+	    blksize = 4096;
+	    datatype = STEIM1;
+	    if ( (n=ph->first_blockette) > 0 && ph->num_blockettes > 0) {
+		while ((bh = (BLOCKETTE_HDR *)((char *)curr_sdr + n)) != NULL) {
+		    if (bh->type == 1000) {
+			b1000 = (BLOCKETTE_1000*)bh;
+			datatype = b1000->format;
+			blksize = ldexp (1.0, b1000->data_rec_len);
+			++b1000_found;
+			break;
+		    }
+		    else n = bh->next;
+		}
+	    }
+#ifdef DEBUG
+	    printf ("blockette 1000 %sfound: type=%s blksize=%d\n",
+		    (b1000_found) ? "" : "NOT ",
+		    (datatype==STEIM1) ? "STEIM1" :
+		    (datatype==STEIM2) ? "STEIM2" : "Unknown", blksize);
+#endif
+	    maxframe = (blksize-64)/sizeof(FRAME);
+	    first_data = FSDH(curr_sdr).first_data;
+	    first_frame = (FRAME *)((char *)curr_sdr + first_data);
+	    if (max_bytes < blksize) {
+		fprintf (stderr, "Invalid SDR file %s: %d bytes left, %d bytes expected\n",
+			 fname, max_bytes, blksize);
+		return(-1);
+	    }
+	}
+	
+    nsamp= FSDH(curr_sdr).num_samples;
+	
+	    
+
+    *nsamp_ptr= nsamp= unpack(fname, sdrs, nbytes, NULL , &data, 0);
+    if (nsamp < 0) {
+	if (data) free(data);
+	return (NULL);
+    }
+    arr= tofloat= (float *)data;
+    min=max= data[0];
+    *tofloat++= (float)*data++;
+    for(i=1; i< nsamp; i++) {
+	if (*data < min) {
+	    min= *data;
+	}else if (*data > max) {
+	    max= *data;
+	}
+	*tofloat++= (float)*data++;
+    }
+    bh->min_value.iflag= min;
+    bh->max_value.iflag= max;
+    bh->format= I32_FORMAT;
+    return arr;
+}
+
+int LoadSDRWave(fname, waves_ptr)
+    char *fname; Wave ***waves_ptr;
+{
+    FILE *fp;
+    Wave *wv;
+    BIS3_HEADER *bh;
+    SDR *sdrs;
+    int nsamp, nbytes;
+	
+    fp=fopen(fname,"r");
+    if(fp==NULL) {
+	ReportFileNotFound(fname, 1);
+	return 0;
+    }else {
+	fclose(fp);
+    }
+
+    sdrs= read_mseed(fname, &nbytes);
+    if(!nbytes) return 0;
+
+    wv= (Wave *)Malloc(sizeof(Wave));
+    bh=&wv->info;
+
+    /* prepare data */
+    wv->data= sdr_prep_data(fname,sdrs,bh,&nsamp,nbytes);
+    if (wv->data == NULL) {
+	free(sdrs);
+	free(wv);
+	return (0);
+    }
+
+    /* the header ... */
+    sdr2bis(sdrs, nsamp, bh);
+
+    *waves_ptr= (Wave **)Malloc(sizeof(Wave *));
+    **waves_ptr= wv;
+    free(sdrs);
+
+    return (1);	    /* always */
+}
+
+/**********************************************************************
+ *   Conversion                                                       *
+ **********************************************************************/
+
+void sdr2bis(curr_sdr, nsamp, bh)
+    SDR *curr_sdr; int nsamp; BIS3_HEADER *bh;
+{
+    int j;
+    float temp;
+/* assume the rest is same as first */
+#define SF    curr_sdr->shdr.h
+
+    /* no BMAGIC insert; done in DumpWave */
+    bzero(bh->station, STATSIZE);
+    strncpy(bh->station, SF.station_id, STATSIZE);
+    bh->station[STATSIZE-1] = '\0';
+    for(j=0; j<STATSIZE; j++) {
+	if(bh->station[j]==' ') {
+	    bh->station[j]='\0';	/* remove blanks */
+	}
+    }
+    bzero(bh->network, NETSIZE);
+    strncpy(bh->network, SF.network_id, SDR_NETWORK_LEN);
+    bzero(bh->channel, CHSIZE);
+    strncpy(bh->channel, SF.channel_id, SDR_CHANNEL_LEN);
+    bzero(bh->location, LOCSIZE);
+    strncpy(bh->location, SF.location_id, SDR_LOCATION_LEN);
+    strib(bh->location);
+    bh->dip= 0;
+    bh->azimuth= -1.0;
+    bh->latitude= 0;
+    bh->longitude= 0;
+    bh->elevation= 0;
+    bh->depth= 0;
+
+    /***   Data info   ***/
+    
+    bh->start_it = sdr_t_2_sti(&curr_sdr->shdr.h);
+    
+    bh->time_correction= 0;
+    /* format set already */
+
+    bh->n_values= nsamp;
+    bh->n_flagged= 0;
+
+    /* sample rate is a little tricky */
+    temp= SF.sample_rate_factor;
+    bh->sample_rate= (temp>0)? temp: -1/temp;
+    temp= SF.sample_rate_mult;
+    bh->sample_rate= (temp>0)?
+	bh->sample_rate*temp: -bh->sample_rate/temp;
+
+    /***   Data_type info   ***/
+
+    bh->flag.iflag= I4FLAG;
+
+    /***   poles & zeros   ***/
+    /* none of this crap */
+    bh->response=-2;
+    bh->digital_sens=0;
+    bh->gain_factor= 0;
+    bh->n_poles= 0;
+    bh->n_zeros= 0;
+
+    for(j=0; j < NUMPOLES; j++) {
+	bh->poles_zeros[j].real = 0.;
+	bh->poles_zeros[j].imag = 0.;
+    }
+
+    /***   Event_1   ***/
+    bh->event_latitude=F4FLAG;
+    bh->event_longitude= F4FLAG;
+    bh->event_depth= F4FLAG;
+    bh->event_origin_it.year= I4FLAG;
+    bh->event_origin_it.second= I4FLAG;
+    bh->event_origin_it.usec= I4FLAG;
+    *bh->event_agency= '\0';
+    bh->event_delta= F4FLAG;
+    bh->event_azimuth= F4FLAG;
+    for(j=0;j < MAGSIZE; j++) {
+	bh->magnitude[j].value= F4FLAG;
+    }
+    for(j=0; j < MAGSIZE; j++) {
+	*bh->magnitude[j].type= '\0';
+    }
+    bh->flinn_engdahl_region= I4FLAG;
+    *bh->source_location_description= '\0';
+
+    /***   Moment_1   ***/
+    for(j=0; j <NUMOMENT; j++) {
+	bh->moment[j]= F4FLAG;
+    }
+    bh->fault_plane.strike= I4FLAG;
+    bh->fault_plane.dip= I4FLAG;
+    bh->fault_plane.rake= I4FLAG;
+    bh->fault_plane.m0= F4FLAG;
+    bh->source_duration= I4FLAG;
+    bh->centroid_time_offset= I4FLAG;
+    *bh->moment_agency= '\0';
+}
+
+/**********************************************************************
+ *   Previewing                                                       *
+ **********************************************************************/
+
+int PreviewSDR( fname, wfmtup, fsi, evt )
+    char *fname; wfmTuple **wfmtup; void **fsi; EvtFile *evt;
+{
+    FILE *fp;
+    SDR curr_sdr;
+    wfmTuple *wfm= NULL;
+    char *name;
+    int j;
+	
+    fp=fopen(fname,"r");
+    if(fp==NULL) {
+	ReportFileNotFound(fname, 1);
+	return 0;
+    }
+    if (fread(&curr_sdr, sizeof(SDR), 1, fp)!=1) {
+	fprintf(stderr,"Can't read SDR frame 0 from %s\n", fname);
+	return 0;
+    }
+
+    /* fill in the tuple */
+    *wfmtup= wfm= (wfmTuple *)Malloc(sizeof(wfmTuple));
+    wfm->next= NULL;
+    wfm->evt= evt;
+    wfm->hdr_offset= wfm->trc_offset= -1;    /* not important */
+    name= wfm->trcName;
+#undef  SF
+#define SF  curr_sdr.shdr.h
+    for(j=0; j<STATSIZE; j++) {
+	if(SF.station_id[j]==' ') 
+	    SF.station_id[j]='\0';	/* remove blanks */
+    }
+    sprintf(name, "%s.%s.%s.%s", SF.station_id, SF.network_id,
+	    SF.channel_id, SF.location_id);
+
+    *fsi= NULL;	/* no specific stuff */
+    fclose(fp);
+
+    return (1);	    /* always */
+}
+
+int LoadSDRWfm( wfm, waveptr )
+    wfmTuple *wfm; Wave **waveptr;
+{
+    /* This is not the right call; waveform database doesn't work!!! */
+    return LoadSDRWave(wfm->evt->name, 1, waveptr);
+}
+

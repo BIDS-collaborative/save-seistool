@@ -1,0 +1,59 @@
+rotate.c - the code which does the plotting of the rotation
+
+float getValue - finds the value of the rotated trace at a point
+void rt_PlotWave -  rotates and plots the traces by calling getValue
+`
+
+rt_panel.c - This code controls the rotation panel and hence
+                 the trace rotations
+
+void rt_activatePanel - activates the rotation panel
+void rt_inactivatePanel - disables the rotation panel
+float azi_dail_cal - converts dial value to N-E angle
+void updateAzi - updates the rotation panel and calls to redraw traces
+void open_rotate_panel - opens rotation panel and start triplet mode
+void close_rotate_panel - close rotation panel ends triplet mode
+void InitRTPanel - initializes rotation panel
+void ResetRotate    -|
+void rt_setNewTheta  |_ As name implies (button routines)
+void incRotate       |
+void decRotate      -|
+
+triplet.c - Deals with the actual rotations
+
+Note locations where pick files are load/written
+special.c:    write out files 
+trackmgr.c:   for silent mode....
+wave.c:       autoload pick file
+
+Note Location which read pick files
+action.c      load file actions .....
+wave.c:       autoload pick files
+
+
+plotwave.c - the postscript plotting routine for seistool
+
+Read in data in varrying formats.
+mseed_wave.c - the mini_seed reading routine
+sac_wave.c - the sac reading routine
+uw_wave.c - the University of Washington format reading routine.
+
+
+
+setup.c - sets up the X-display 
+
+em_panel.c - event queue manager panel stuff
+
+fq_panel.c - controls the filter panels
+
+freqplot.c - frequencies vs. times plot
+
+instr.c - reading in insturement information
+
+scale.c - time scale work stuff
+
+cli.c - command line interface....
+
+wfmdb.c - deal with a waveform datebase
+
+

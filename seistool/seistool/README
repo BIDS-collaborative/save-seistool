@@ -1,0 +1,42 @@
+#	$Id: README,v 1.1 2001/12/21 18:39:02 lombard Exp $
+
+Comments about seistool, October, 2001; Pete Lombard
+
+This code is an awful mess; beware!
+
+Originally seistool was written for SunOS 4, a K&R compiler, xview, etc. Over
+the years, it has been hacked by a number of people. Some function prototypes
+are present. An attempt was made to use the qlib2 library for time and SEED
+manipulations. But qlib2.h defines a FRAME structure that conflicts with a
+FRAME structure in xview. So a bunch of kludges are in place to use the qlib2
+time routines (which know about leapseconds) without using qlib2.h in most of
+the source files.
+
+This code is supposed to work both at the Berkeley Seismology Lab and at
+LBL. But these groups use different formats for several of the files used by
+seistool. The result is not pretty.
+
+Version 3 of seistool uses BSL's new instr.db.resp* files for both instrument
+location and instrument location. These files are generated from the NCEDC
+database. Because these files are a different format than the old instr.resp
+and instr.coord files, LBL will need to generate their own response/location
+files to use this version of seistool.
+
+There are too many GC (graphic context structures); many of them are
+duplicates. Since they are a server resource, they should be conserved and
+shared between windows. This should improve performance as well.
+
+The screen repaint and scroll functions are very inefficient. Repainting is
+done too often. Scrolling the main window even by a single trace (up or down)
+does a complete redraw of the screen. The result is that on a slow network
+connection, seistool is horrible to use. Currently there is an option to turn
+off autoredraw. This affects only a small number of the repaint calls in the
+main and zoom windows. There is a refresh button on the main screen to
+manually initiate repainting. On the zoom control panel, the unlabeled button
+at lower right will do a repaint of the zoom window.
+
+Seistool never holds an internal array of rotated trace values; it always
+computes the rotated values each time it displays rotated traces in the zoom
+window. So saved amplitudes are always on the unrotated traces. Also the
+amplitudes shown in the zoom window status bar are for the unrotated traces
+instead of for the rotated traces.

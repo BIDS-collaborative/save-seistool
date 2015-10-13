@@ -1,0 +1,11 @@
+The fft routines called by fftf.f were causing problems when reading
+large data files, like 24 hours of 100 SPS data. Some extra high-frequency
+noise would be added to the data after it had been transformed. Testing for
+memory access errors using rtc did not indicate a problem there.
+
+I replaced the local fortran fft routines with the separate library fftw,
+single precision version. And I linked to the static library to avoid having
+to copy libfftw* to all the places seistool could possibly be run.
+
+Pete Lombard
+2005/02/11
