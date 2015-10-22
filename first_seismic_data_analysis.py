@@ -6,7 +6,9 @@ import glob
 from obspy.core import read
 
 # Read miniSEED data file
-st = read("BDM.BK.LHE.00.D.2015.259.225431",format="mSEED")
+input_file = input("Enter mSEED file name:")
+# st = read(input_file,format="mSEED")
+st = read(input_file)
 # Print stream. A stream is an object that contains all data from a miniSEED file.
 # A stream is a collection of traces.
 print("Printing stream")
