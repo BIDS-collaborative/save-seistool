@@ -13,7 +13,7 @@ st = Stream()
 i = 0
 
 # glob.glob returns a list of files in the directory
-for file in glob.glob("/Users/Proxima/Documents/classes/Fall2015/hacking-measurement/save-seistool/examples/CHILE_M8.3/*.*"):
+for file in glob.glob("../examples/CHILE_M8.3/*.gz"):
 	i += 1
 	if (i>5):
 		break
